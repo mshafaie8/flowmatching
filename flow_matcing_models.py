@@ -7,7 +7,7 @@ import torch.nn as nn
 from denoisers import *
 
 
-class FlowMatchingClassUncond():
+class FlowMatchingClassUncond(nn.Module):
     def __init__(
         self,
         denoiser: TimeConditionalUNet,

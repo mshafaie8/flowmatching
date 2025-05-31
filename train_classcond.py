@@ -2,11 +2,10 @@
 Contains functions for training and testing a class-conditioned flow matching model for MNIST digit generation.
 """
 
-
 import argparse
+import wandb
 from pathlib import Path
 from datetime import datetime
-from typing import List
 import torch
 import torch.nn as nn
 from torchvision import datasets, transforms
@@ -21,26 +20,27 @@ from data_setup import *
 def train_one_epoch(model: FlowMatchingClassCond,
                     trainloader: DataLoader,
                     optimizer: torch.optim.Optimizer,
-                    device: torch.device) -> List:
+                    device: torch.device,
+                    wandb_logging: bool = False):
     
     """Trains model for one epoch and returns average loss.
     
     For each batch of sample images, runs forward pass to compute losses,
-    performs gradient computation, and takes gradient step. Returns average
-    loss over training set.
+    performs gradient computation, and takes gradient step. Prints average
+    loss over every 100 mini-batches.
 
     Args:
         model: The class-conditioned flow matching model to be trained.
         trainloader: Dataloader instance containing training MNIST images.
         optimizer: PyTorch optimizer
         device: Device model sits on
+        wandb_logging: bool, whether to log training steps in wandb, False by default
     
     Returns:
-        List of losses over epoch.
+        None
     """
 
     running_loss = 0
-    losses = []
 
     for i, (imgs, classes) in enumerate(trainloader):
 
@@ -50,7 +50,8 @@ def train_one_epoch(model: FlowMatchingClassCond,
 
         # Run forward method to get losses
         loss = model(imgs, classes)
-        losses.append(loss)
+        if wandb_logging:
+            wandb.log({"loss": loss})
 
         # Zero gradients
         optimizer.zero_grad()
@@ -63,11 +64,10 @@ def train_one_epoch(model: FlowMatchingClassCond,
 
         running_loss += loss
 
-        if i % 100 == 0:
-            print(f"Average Loss From Batch {i-100} to Batch {i}: {running_loss / 100}")
+        if i and i % 100 == 0:
+            print(f"Average Loss From Batch {i-100}-{i}: {running_loss / 100}")
             running_loss = 0
 
-    return losses
 
 def train(model: FlowMatchingClassCond,
           trainloader: DataLoader,
@@ -75,7 +75,8 @@ def train(model: FlowMatchingClassCond,
           scheduler: torch.optim.lr_scheduler,
           device: torch.device,
           num_epochs: int,
-          target_dir: Path) -> List:
+          target_dir: Path,
+          wandb_logging: bool = False):
     
     """Runs training over num_epochs epochs.
 
@@ -83,33 +84,33 @@ def train(model: FlowMatchingClassCond,
     per step. Returns list of losses.
 
     Args:
+        model: PyTorch flow matching model.
+        trainloader: Dataloader instance with sample images.
+        optimizer: PyTorch optimizer
+        scheduler: PyTorch learning rate scheduler
+        device: Device model sits on
         num_epochs: int, number of epochs to train for
+        target_dir: Directory in which to save model checkpoints
+        wandb_logging: bool, whether to log training steps in wandb, False by default
     
     Returns:
-        List of losses at each step over all epochs.
+        None
     """
 
     # Move model to device
     model.to(device)
 
-    losses = []
-
     for epoch in tqdm(range(num_epochs)):
         print(f"STARTING EPOCH {epoch+1}")
-        losses.extend(
-            train_one_epoch(model,
-                            trainloader,
-                            optimizer,
-                            device)
-            )
+        train_one_epoch(model,
+                        trainloader,
+                        optimizer,
+                        device,
+                        wandb_logging)
         scheduler.step()
-        model_path = target_dir / f"epoch_{epoch+1}"
-        model_path.mkdir(parents=True,
-                         exist_ok=True)
+        model_path = target_dir / f"epoch_{epoch+1}.pth"
         torch.save(obj=model.state_dict(),
                    f=model_path)
-    
-    return losses
 
 
 if __name__ == "__main__":
@@ -157,6 +158,13 @@ if __name__ == "__main__":
         default=64
     )
 
+    parser.add_argument(
+        "--wandb-project",
+        type=str,
+        default='',
+        help='Indicate a WandB project to enable logging of loss during training steps.'
+    )
+
     args = parser.parse_args()
     
     # Get dataset
@@ -192,17 +200,33 @@ if __name__ == "__main__":
     # Instantiate model path
     target_dir = Path("./models")
     target_dir = target_dir / "ClassConditionedFlowMatching" / (f"timestamp_" + datetime.now().strftime('%Y%m%d_%H%M%S'))
+    target_dir.mkdir(parents=True,
+                         exist_ok=True)
 
+    
+    # Initialize WandB logging
+    if args.wandb_project:
+        wandb.login()
+        run = wandb.init(
+            project="flowmatching_MNIST",
+            config={
+                "setting": "class_conditional",
+                "epochs": args.epochs,
+                "learning_rate": args.lr,
+                "batch_size": args.batch_size,
+                "hidden_dim": args.hidden_dim
+            }
+        )
+    
     # Train Model
-    losses = train(class_cond_flow_matching,
+    train(class_cond_flow_matching,
           trainloader,
           optimizer,
           scheduler,
           device,
           args.epochs,
-          target_dir)
-    
-    # TODO: Plot losses and draw some samples from flow matching model and save the figures to target_dir 
+          target_dir,
+          wandb_logging=(True if args.wandb_project else False))
 
 
 
