@@ -4,7 +4,7 @@ Flow matching model definitions.
 
 import torch
 import torch.nn as nn
-from denoisers import *
+from models.denoisers import *
 
 
 class FlowMatchingClassUncond(nn.Module):

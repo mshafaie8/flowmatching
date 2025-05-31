@@ -3,7 +3,7 @@ Encodes various UNet architectures for performing denoising direction prediction
 """
 
 
-from blocks import *
+from models.blocks import *
 
 class UnconditionalUNet(nn.Module):
     def __init__(

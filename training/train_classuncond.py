@@ -2,6 +2,7 @@
 Contains functions for training and testing a class-conditioned flow matching model for MNIST digit generation.
 """
 
+
 import argparse
 import wandb
 from pathlib import Path
@@ -13,24 +14,24 @@ from torch.utils.data import DataLoader
 from torchvision.transforms import ToTensor
 import matplotlib.pyplot as plt
 from tqdm.auto import tqdm
-from flow_matcing_models import *
-from denoisers import *
+from models.flow_matcing_models import *
+from models.denoisers import *
 from data_setup import *
 
-def train_one_epoch(model: FlowMatchingClassCond,
+def train_one_epoch(model: FlowMatchingClassUncond,
                     trainloader: DataLoader,
                     optimizer: torch.optim.Optimizer,
                     device: torch.device,
                     wandb_logging: bool = False):
     
-    """Trains model for one epoch and returns average loss.
+    """Trains model for one epoch.
     
     For each batch of sample images, runs forward pass to compute losses,
     performs gradient computation, and takes gradient step. Prints average
     loss over every 100 mini-batches.
 
     Args:
-        model: The class-conditioned flow matching model to be trained.
+        model: The unconditioned flow matching model to be trained.
         trainloader: Dataloader instance containing training MNIST images.
         optimizer: PyTorch optimizer
         device: Device model sits on
@@ -42,14 +43,13 @@ def train_one_epoch(model: FlowMatchingClassCond,
 
     running_loss = 0
 
-    for i, (imgs, classes) in enumerate(trainloader):
+    for i, (imgs, _) in enumerate(trainloader):
 
-        # Move images and classes to target device
+        # Move imagesto target device
         imgs = imgs.to(device)
-        classes = classes.to(device)
 
         # Run forward method to get losses
-        loss = model(imgs, classes)
+        loss = model(imgs)
         if wandb_logging:
             wandb.log({"loss": loss})
 
@@ -68,8 +68,7 @@ def train_one_epoch(model: FlowMatchingClassCond,
             print(f"Average Loss From Batch {i-100}-{i}: {running_loss / 100}")
             running_loss = 0
 
-
-def train(model: FlowMatchingClassCond,
+def train(model: FlowMatchingClassUncond,
           trainloader: DataLoader,
           optimizer: torch.optim.Optimizer,
           scheduler: torch.optim.lr_scheduler,
@@ -95,6 +94,7 @@ def train(model: FlowMatchingClassCond,
     
     Returns:
         None
+        
     """
 
     # Move model to device
@@ -140,11 +140,6 @@ if __name__ == "__main__":
         type=float,
         default=0.1
     )
-    training_details.add_argument(
-        "--p-uncond",
-        type=float,
-        default=0.2
-    )
 
     unet_architecture = parser.add_argument_group("Hyperparameters for UNet Architecture")
     unet_architecture.add_argument(
@@ -157,12 +152,12 @@ if __name__ == "__main__":
         type=int,
         default=64
     )
-
+    
     parser.add_argument(
         "--wandb-project",
         type=str,
         default='',
-        help='Indicate a WandB project to enable logging of loss during training steps.'
+        help ='Indicate a WandB project to enable logging of loss during training steps.'
     )
 
     args = parser.parse_args()
@@ -189,28 +184,25 @@ if __name__ == "__main__":
         print("No GPU available, using CPU.")
 
     # Instantiate model, optimizer, and scheduler
-    class_cond_unet = ClassConditionalUNet(args.input_dim, len(trainset.classes), args.hidden_dim)
-    class_cond_flow_matching = FlowMatchingClassCond(class_cond_unet,
-                                                     device=device,
-                                                     p_uncond=args.p_uncond,
-                                                     ).to(device)
-    optimizer = torch.optim.Adam(class_cond_flow_matching.parameters(), lr=args.lr)
+    time_cond_unet = TimeConditionalUNet(args.input_dim, args.hidden_dim)
+    uncond_flow_matching = FlowMatchingClassUncond(time_cond_unet, device=device).to(device)
+    optimizer = torch.optim.Adam(uncond_flow_matching.parameters(), lr=args.lr)
     scheduler = torch.optim.lr_scheduler.ExponentialLR(optimizer, gamma=args.scheduler_multiplier**(1/args.epochs))
 
     # Instantiate model path
-    target_dir = Path("./models")
-    target_dir = target_dir / "ClassConditionedFlowMatching" / (f"timestamp_" + datetime.now().strftime('%Y%m%d_%H%M%S'))
+    target_dir = Path("./weights")
+    target_dir = target_dir / "UnconditionalFlowMatching" / (f"timestamp_" + datetime.now().strftime('%Y%m%d_%H%M%S'))
     target_dir.mkdir(parents=True,
-                         exist_ok=True)
+                     exist_ok=True)
 
     
-    # Initialize WandB logging
+    # Initialize WandB logging if project provided
     if args.wandb_project:
         wandb.login()
         run = wandb.init(
-            project="flowmatching_MNIST",
+            project=args.wandb_project,
             config={
-                "setting": "class_conditional",
+                "setting": "class_unconditional",
                 "epochs": args.epochs,
                 "learning_rate": args.lr,
                 "batch_size": args.batch_size,
@@ -219,7 +211,7 @@ if __name__ == "__main__":
         )
     
     # Train Model
-    train(class_cond_flow_matching,
+    train(uncond_flow_matching,
           trainloader,
           optimizer,
           scheduler,
