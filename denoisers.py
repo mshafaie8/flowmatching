@@ -90,7 +90,7 @@ class ClassConditionalUNet(nn.Module):
         self,
         in_channels: int,
         num_classes: int,
-        num_hiddens: int,
+        num_hiddens: int
     ):
         super().__init__()
         self.num_classes = num_classes
