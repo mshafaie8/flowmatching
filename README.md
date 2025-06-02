@@ -34,7 +34,7 @@ The following are samples drawn after 5 epochs of training **without** classifie
 
 The following are samples drawn after 5 epochs of training **with** classifier-free guidance. Weights can be found under the weights/ClassConditionedFlowMatching directory.
 
-![image info](./sample_results/woutcfg.png)
+![image info](./sample_results/wcfg.png)
 
 As evidenced by the above samples, using classifier-free guidance yields much better results. 
 
